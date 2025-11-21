@@ -355,7 +355,7 @@ class VaultaMCP:
             },
             {
                 'name': 'vaulta_login',
-                'description': 'Login to Vaulta with email - sends OTP to email and returns temporary token',
+                'description': 'Login to Vaulta with email - sends OTP to email and returns temporary token. IMPORTANT: Save the "access_token" from the response - you MUST use it when calling vaulta_verify_otp. Response format: {"access_token": "...", "token_type": "bearer", "message": "..."}',
                 'input_schema': {
                     'type': 'object',
                     'properties': {
@@ -369,17 +369,17 @@ class VaultaMCP:
             },
             {
                 'name': 'vaulta_verify_otp',
-                'description': 'Verify OTP code sent to email and get bearer access token',
+                'description': 'Verify OTP code sent to email and complete authentication. CRITICAL: The "token" parameter is the access_token YOU received in the vaulta_login response - DO NOT ask the user for this token! Only ask the user for the OTP code.',
                 'input_schema': {
                     'type': 'object',
                     'properties': {
                         'otp': {
                             'type': 'string',
-                            'description': 'OTP code from email'
+                            'description': 'The 6-digit OTP code that the user received in their email. This is the ONLY thing you should ask the user for.'
                         },
                         'token': {
                             'type': 'string',
-                            'description': 'Temporary access_token received from login response'
+                            'description': 'The temporary access_token from the vaulta_login response (NOT from the user). Extract this from the previous tool call result - it is in response["access_token"].'
                         }
                     },
                     'required': ['otp', 'token']
@@ -710,13 +710,13 @@ class VaultaMCP:
         if not isinstance(resp, dict):
             return None
         # Direct keys
-        for key in ['access_token', 'token', 'bearer', 'accessToken']:
+        for key in ['access_token', 'jwt_token', 'token', 'bearer', 'accessToken']:
             if key in resp and isinstance(resp[key], str) and resp[key]:
                 return resp[key]
         # Nested in 'data'
         data = resp.get('data') if isinstance(resp.get('data'), dict) else None
         if data:
-            for key in ['access_token', 'token', 'bearer', 'accessToken']:
+            for key in ['access_token', 'jwt_token', 'token', 'bearer', 'accessToken']:
                 if key in data and isinstance(data[key], str) and data[key]:
                     return data[key]
         return None

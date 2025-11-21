@@ -47,14 +47,30 @@ def chat():
             ai_session = ai_service.sessions.get(session_id)
             if ai_session:
                 vaulta_token = ai_session.get('vaulta_token')
+                if vaulta_token:
+                    print(f"🔑 Retrieved token from in-memory session: {vaulta_token[:20]}...")
+            
+            # Also check persistent store
+            if not vaulta_token:
+                persisted = ai_service.store.get(session_id)
+                if persisted:
+                    vaulta_token = persisted.get('vaulta_token')
+                    if vaulta_token:
+                        print(f"🔑 Retrieved token from persistent store: {vaulta_token[:20]}...")
+        
+        # Set token on vaulta_mcp BEFORE any operations
+        if vaulta_token:
+            print(f"🔐 Setting token on vaulta_mcp: {vaulta_token[:20]}...")
+            vaulta_mcp.set_access_token(vaulta_token)
+        else:
+            print("⚠️ No token available to set on vaulta_mcp")
         
         # Get user context from Vaulta if token provided
         user_context = None
         current_token = vaulta_token
         
         if vaulta_token:
-            # Set token and get current user from Vaulta
-            vaulta_mcp.set_access_token(vaulta_token)
+            print("👤 Fetching user context from Vaulta...")
             user_data = vaulta_mcp.client.get_current_user()
             
             if not user_data.get('error'):
@@ -70,9 +86,24 @@ def chat():
                     'vaulta_user_id': user_info.get('id')
                 }
                 current_token = vaulta_token
+                
+                # Store token and user_context in AI session for persistence
+                ai_session = ai_service.sessions.get(session_id)
+                if ai_session:
+                    ai_session['vaulta_token'] = vaulta_token
+                    ai_session['user_context'] = user_context
+                    ai_session['authenticated'] = True
+                    # Persist immediately
+                    ai_service._persist_session(session_id)
             else:
-                # Token invalid/expired
+                # Token invalid/expired - clear it
                 current_token = None
+                ai_session = ai_service.sessions.get(session_id)
+                if ai_session:
+                    ai_session['vaulta_token'] = None
+                    ai_session['user_context'] = {}
+                    ai_session['authenticated'] = False
+                    ai_service._persist_session(session_id)
         
         # Process chat with AI service
         response = ai_service.chat(
@@ -90,34 +121,45 @@ def chat():
             for tool_call in last_interaction.get('tool_calls', []):
                 if tool_call['function'] in ['vaulta_verify_otp']:
                     if 'result' in tool_call and isinstance(tool_call['result'], dict):
-                        new_token = tool_call['result'].get('access_token')
+                        result = tool_call['result']
+                        # Check for both access_token and jwt_token
+                        new_token = result.get('access_token') or result.get('jwt_token')
                         if new_token:
+                            print(f"✅ OTP verified! Storing new access token: {new_token[:20]}...")
                             current_token = new_token
                             token_changed = True
                             session['authenticated'] = True
-                            session['vaulta_token'] = new_token  # Store token in session
+                            session['vaulta_token'] = new_token  # Store token in in-memory session
                             
-                            # Get user context after authentication
-                            vaulta_mcp.set_access_token(new_token)
-                            user_data = vaulta_mcp.client.get_current_user()
-                            if not user_data.get('error'):
-                                user_info = user_data.get('user', {})
-                                accounts = user_data.get('accounts', [])
+                            # Extract user data directly from OTP verification result
+                            user_data = result.get('user', {})
+                            if user_data:
+                                print(f"👤 Extracting user context from OTP response...")
                                 user_context = {
-                                    'email': user_info.get('email'),
-                                    'name': f"{user_info.get('first_name', '')} {user_info.get('last_name', '')}".strip(),
-                                    'phone': user_info.get('phone'),
-                                    'accounts': accounts,
-                                    'vaulta_user_id': user_info.get('id')
+                                    'email': user_data.get('email'),
+                                    'name': f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip(),
+                                    'phone': user_data.get('phone'),
+                                    'accounts': [],  # Will be populated when needed
+                                    'vaulta_user_id': user_data.get('id')
                                 }
+                                # Update session with user context
+                                session['user_context'] = user_context
+                                print(f"✅ User context saved: {user_context.get('email')}")
+                            
+                            # Persist everything (token + user_context) to storage
+                            ai_service._persist_session(session_id)
                         break
                 elif tool_call['function'] == 'vaulta_logout':
                     # Clear token and de-authenticate session
+                    print("🚪 User logged out - clearing token from session")
                     current_token = None
                     session['authenticated'] = False
-                    session['vaulta_token'] = None  # Clear token from session
+                    session['vaulta_token'] = None  # Clear token from in-memory session
                     user_context = None
                     token_changed = True
+                    
+                    # Also clear from persistent storage
+                    ai_service._persist_session(session_id)
                     break
         
         # Determine conversation status

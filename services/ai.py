@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Any
 import google.generativeai as genai
 from mcp.server import mcp_server
 from configs.config import get_active_config
+from utils.session_store import session_store
 
 # Configure logging
 logging.basicConfig(
@@ -29,7 +30,8 @@ class AIService:
         self.model_name = _cfg.GEMINI_MODEL
         # Model will be created per session with system instruction
         self.base_system_instruction = self._get_base_system_instruction()
-        self.sessions = {}  # Store chat sessions by session_id
+        self.sessions = {}  # In-memory sessions (models, chat objects)
+        self.store = session_store  # Persistent store (tokens, history, user data)
     
     def _get_base_system_instruction(self) -> str:
         """Get base system instruction that applies to all sessions"""
@@ -155,14 +157,21 @@ CORE RULES:
                 system_instruction=system_instruction
             )
             
+            # Try to restore persisted data
+            persisted = self.store.get(session_id) or {}
+            
             # Create new session
             self.sessions[session_id] = {
                 'chat': model.start_chat(enable_automatic_function_calling=False),
                 'model': model,
-                'history': [],
-                'user_context': user_context or {},
-                'authenticated': bool(user_context and user_context.get('email'))
+                'history': persisted.get('history', []),
+                'user_context': user_context or persisted.get('user_context', {}),
+                'authenticated': bool(user_context and user_context.get('email')),
+                'vaulta_token': persisted.get('vaulta_token')
             }
+            
+            # Persist serializable data
+            self._persist_session(session_id)
         else:
             logger.info(f"♻️  Reusing existing session: {session_id}")
             
@@ -187,6 +196,9 @@ CORE RULES:
                 self.sessions[session_id]['chat'] = model.start_chat(enable_automatic_function_calling=False)
                 self.sessions[session_id]['user_context'] = user_context or {}
                 self.sessions[session_id]['authenticated'] = is_authenticated
+                
+                # Persist updated data
+                self._persist_session(session_id)
         
         return self.sessions[session_id]
     
@@ -214,15 +226,38 @@ CORE RULES:
     2. Call vaulta_register with all collected details
     3. After successful registration, tell user: "Registration successful! Now let's log you in."
     4. Ask for their email to login
-    5. Call vaulta_login (sends OTP to email)
-    6. Ask for OTP code
-    7. Call vaulta_verify_otp with OTP and token
-    8. After verification → user is logged in, NOW offer Vaulta services
+    5. Call vaulta_login (sends OTP to user's email and YOU receive the access_token in the response)
+    6. Tell user: "I've sent an OTP code to your email. Please check your inbox and enter the 6-digit code."
+    7. Wait for user to provide ONLY the OTP code (just the 6-digit number)
+    8. Call vaulta_verify_otp with the OTP code + the access_token YOU received in step 5's response
+    9. After verification → user is logged in, NOW offer Vaulta services
     
     EXISTING USER LOGIN:
-    1. Get email address → call vaulta_login (returns temporary token and sends OTP)
-    2. Ask for OTP → call vaulta_verify_otp (returns bearer access token)
-    3. After verification → token is set automatically, NOW offer Vaulta services
+    1. Get email address → call vaulta_login
+    2. YOU receive the access_token in the vaulta_login response (save it for next step)
+    3. Tell user: "I've sent an OTP code to your email. Please check your inbox and enter the 6-digit code."
+    4. Wait for user to provide ONLY the OTP code from their email
+    5. Call vaulta_verify_otp with: otp=<user's code>, token=<the access_token from step 2>
+    6. After verification → user is logged in, NOW offer Vaulta services
+    
+    🚨 CRITICAL - DO NOT CONFUSE THE USER:
+    ✅ The USER'S EMAIL contains: A 6-digit OTP code (example: 525965)
+    ✅ The VAULTA_LOGIN RESPONSE contains: access_token (you receive this automatically)
+    
+    ❌ NEVER ask the user for: "access_token", "bearer token", "temporary token"
+    ❌ The email does NOT contain any tokens - only the OTP code!
+    
+    📋 EXAMPLE CONVERSATION:
+    User: "I want to login"
+    You: "What's your email?"
+    User: "test@example.com"
+    [You call vaulta_login and receive: {"access_token": "abc123", "message": "OTP sent"}]
+    You: "I've sent an OTP code to your email. Please enter the 6-digit code."
+    User: "525965"
+    [You call vaulta_verify_otp with otp="525965" and token="abc123" from the response YOU got]
+    You: "Perfect! You're now logged in!"
+    
+    The access_token is in YOUR response data, NOT in the user's email!
     
     OTHER AUTH COMMANDS:
     - If user asks to logout → call vaulta_logout (clear token)
@@ -260,6 +295,17 @@ CORE RULES:
             instruction += "\n⚠️ USER NOT LOGGED IN: Ask if they're a new user or existing user to guide them through registration or login."
         
         return instruction
+    
+    def _persist_session(self, session_id: str):
+        """Persist serializable session data to storage"""
+        if session_id in self.sessions:
+            session = self.sessions[session_id]
+            self.store.set(session_id, {
+                'history': session.get('history', []),
+                'user_context': session.get('user_context', {}),
+                'vaulta_token': session.get('vaulta_token'),
+                'authenticated': session.get('authenticated', False)
+            })
     
     def chat(self, session_id: str, message: str, user_context: Dict = None) -> Dict:
         """
@@ -353,6 +399,10 @@ CORE RULES:
             })
             
             logger.info(f"💾 Saved to history. Total interactions: {len(session['history'])}")
+            
+            # Persist to storage
+            self._persist_session(session_id)
+            
             logger.info(f"{'='*60}\n")
             
             # Just return the message - keep it simple for non-technical users
