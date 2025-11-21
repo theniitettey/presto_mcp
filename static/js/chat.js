@@ -3,7 +3,8 @@ class ChatApp {
     this.messagesContainer = document.getElementById("chatMessages");
     this.messageInput = document.getElementById("messageInput");
     this.sendButton = document.getElementById("sendButton");
-    this.statusIndicator = document.getElementById("statusIndicator");
+    this.statusText = document.getElementById("statusText");
+    this.statusDot = document.getElementById("statusDot");
 
     this.sessionId = null;
     this.token = null;
@@ -46,14 +47,20 @@ class ChatApp {
       // Hide typing indicator
       this.showTyping(false);
 
+      // Log response for debugging
+      console.log("📥 Response:", response);
+
       // Update session info
       if (response.session_id) {
         this.sessionId = response.session_id;
+        console.log("📝 Session ID:", this.sessionId);
       }
-      if (response.token) {
+      if (response.token !== undefined) {
         this.token = response.token;
+        console.log("🔑 Token:", this.token ? "Set" : "Cleared");
       }
       if (response.status) {
+        console.log("📊 Status update:", response.status);
         this.updateStatus(response.status);
       }
 
@@ -167,7 +174,24 @@ class ChatApp {
   updateStatus(status) {
     this.currentStatus = status;
     const statusText = this.formatStatus(status);
-    this.statusIndicator.textContent = `Status: ${statusText}`;
+
+    // Update status text
+    if (this.statusText) {
+      this.statusText.textContent = statusText;
+    }
+
+    // Update status dot color based on authentication
+    if (this.statusDot) {
+      if (status === "AUTHENTICATED" || status.includes("VAULTA")) {
+        this.statusDot.style.background = "var(--color-success)";
+        this.statusDot.style.boxShadow = "0 0 0 4px rgba(22, 163, 74, 0.15)";
+      } else {
+        this.statusDot.style.background = "#fbbf24";
+        this.statusDot.style.boxShadow = "0 0 0 4px rgba(251, 191, 36, 0.15)";
+      }
+    }
+
+    console.log("✅ Status updated to:", statusText);
   }
 
   formatStatus(status) {

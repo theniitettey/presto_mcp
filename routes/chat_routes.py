@@ -42,6 +42,12 @@ def chat():
         session_id = session_id or str(uuid.uuid4())
         vaulta_token = data.get('token')
         
+        # Try to get token from AI session if not provided by frontend
+        if not vaulta_token:
+            ai_session = ai_service.sessions.get(session_id)
+            if ai_session:
+                vaulta_token = ai_session.get('vaulta_token')
+        
         # Get user context from Vaulta if token provided
         user_context = None
         current_token = vaulta_token
@@ -89,6 +95,7 @@ def chat():
                             current_token = new_token
                             token_changed = True
                             session['authenticated'] = True
+                            session['vaulta_token'] = new_token  # Store token in session
                             
                             # Get user context after authentication
                             vaulta_mcp.set_access_token(new_token)
@@ -108,6 +115,7 @@ def chat():
                     # Clear token and de-authenticate session
                     current_token = None
                     session['authenticated'] = False
+                    session['vaulta_token'] = None  # Clear token from session
                     user_context = None
                     token_changed = True
                     break
