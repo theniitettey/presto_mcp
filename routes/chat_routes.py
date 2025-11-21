@@ -87,6 +87,8 @@ def chat():
                 }
                 current_token = vaulta_token
                 
+                print(f"✅ User context fetched: {user_context.get('email')}")
+                
                 # Store token and user_context in AI session for persistence
                 ai_session = ai_service.sessions.get(session_id)
                 if ai_session:
@@ -97,6 +99,7 @@ def chat():
                     ai_service._persist_session(session_id)
             else:
                 # Token invalid/expired - clear it
+                print(f"❌ Token invalid or expired: {user_data.get('error')}")
                 current_token = None
                 ai_session = ai_service.sessions.get(session_id)
                 if ai_session:
@@ -104,6 +107,12 @@ def chat():
                     ai_session['user_context'] = {}
                     ai_session['authenticated'] = False
                     ai_service._persist_session(session_id)
+        else:
+            # No token - check if we have persisted user context from previous session
+            persisted = ai_service.store.get(session_id)
+            if persisted and persisted.get('user_context', {}).get('email'):
+                user_context = persisted['user_context']
+                print(f"📦 Loaded user context from storage: {user_context.get('email')}")
         
         # Process chat with AI service
         response = ai_service.chat(
