@@ -1,0 +1,72 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv/
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# --- Flask / Web ---
+instance/
+*.db
+*.sqlite3
+*.sqlite
+
+# Environment variables/secrets
+.env
+*.env
+
+# Logs
+*.log
+logs/
+logging/
+*.out
+
+# Cache
+.cache/
+pytest_cache/
+coverage.xml
+*.cover
+htmlcov/
+
+# --- VSCode / PyCharm / IDEs ---
+.vscode/
+.idea/
+*.iml
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+
+# --- Node (if using React frontend in same repo) ---
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+.pnp/
+.pnp.js
+.next/
+
+# --- Data files ---
+data/
