@@ -503,18 +503,6 @@ Just tell me what you'd like to do! 😊"
                         final_response = response.text
                         logger.info(f"✅ Final AI response: {final_response[:100]}...")
                         break
-                            # Extract state from AI response if present
-                            import re
-                            ai_state = None
-                            if final_response:
-                                # Look for [STATE: ...] pattern
-                                state_match = re.search(r'\[STATE:\s*(\w+)\]', final_response)
-                                if state_match:
-                                    ai_state = state_match.group(1)
-                                    # Remove the state marker from the user-facing message
-                                    final_response = re.sub(r'\[STATE:\s*\w+\]', '', final_response).strip()
-                                    logger.info(f"🎯 AI reported state: {ai_state}")
-            
                 else:
                     final_response = response.text
                     logger.info(f"✅ Final AI response: {final_response[:100]}...")
@@ -524,8 +512,7 @@ Just tell me what you'd like to do! 😊"
             session['history'].append({
                 'user': message,
                 'assistant': final_response,
-                'tool_calls': tool_results,
-                'ai_state': ai_state  # Store the state reported by AI
+                'tool_calls': tool_results
             })
             
             logger.info(f"💾 Saved to history. Total interactions: {len(session['history'])}")

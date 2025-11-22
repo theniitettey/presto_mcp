@@ -49,14 +49,6 @@ def determine_status(session: dict, user_context: dict = None) -> str:
     """
     if not session:
         return ConversationStatus.NOT_AUTHENTICATED
-        # Check if AI reported its own state in the last interaction
-        if session.get('history'):
-            last_interaction = session['history'][-1]
-            ai_state = last_interaction.get('ai_state')
-            if ai_state:
-                # AI explicitly reported its state - use it directly
-                return ai_state
-    
     
     # Check if user is authenticated with Vaulta
     if not user_context or not user_context.get('email'):
