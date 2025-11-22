@@ -50,6 +50,20 @@ def determine_status(session: dict, user_context: dict = None) -> str:
     if not session:
         return ConversationStatus.NOT_AUTHENTICATED
     
+    # If an explicit update_status tool call exists in history, prefer its last value
+    if session.get('history'):
+        for interaction in reversed(session['history']):
+            tool_calls = interaction.get('tool_calls', [])
+            for tc in reversed(tool_calls):
+                if tc.get('function') == 'update_status':
+                    # Try arguments first, then result
+                    explicit = (tc.get('arguments', {}) or {}).get('status') or (tc.get('result', {}) or {}).get('status')
+                    if explicit and hasattr(ConversationStatus, explicit):
+                        return getattr(ConversationStatus, explicit)
+                    if explicit:
+                        return explicit  # Return as-is even if not predefined
+                    break
+
     # Check if user is authenticated with Vaulta
     if not user_context or not user_context.get('email'):
         # Check if waiting for OTP

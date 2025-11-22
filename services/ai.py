@@ -5,6 +5,7 @@ Handles AI model interactions with tool calling support
 import os
 import json
 import logging
+import re  # retained though state markers removed, may be reused later
 from typing import Dict, List, Optional, Any
 import google.generativeai as genai
 from mcp.server import mcp_server
@@ -176,64 +177,49 @@ Just tell me what you'd like to do! 😊"
             }
     
     def get_or_create_session(self, session_id: str, user_context: Dict = None):
-        """Get existing chat session or create new one"""
+        """Get existing chat session or create new one.
+
+        Forget ALL prior context when a completely new session_id appears.
+        Only reuse history for an already existing in-memory session.
+        """
         if session_id not in self.sessions:
             logger.info(f"📝 Creating new session: {session_id}")
+            logger.info(f"   (Forgetting any persisted history by design)")
             logger.info(f"   User authenticated: {bool(user_context and user_context.get('email'))}")
-            
-            # Build system instruction with user context
+
             system_instruction = self._build_system_instruction(user_context)
-            
-            # Create model with system instruction
             model = genai.GenerativeModel(
                 model_name=self.model_name,
                 tools=self._get_gemini_tools(),
                 system_instruction=system_instruction
             )
-            
-            # Try to restore persisted data
-            persisted = self.store.get(session_id) or {}
-            
-            # Create new session
+            # Start fresh (no restored history or context unless passed in)
             self.sessions[session_id] = {
                 'chat': model.start_chat(enable_automatic_function_calling=False),
                 'model': model,
-                'history': persisted.get('history', []),
-                'user_context': user_context or persisted.get('user_context', {}),
+                'history': [],
+                'user_context': user_context or {},
                 'authenticated': bool(user_context and user_context.get('email')),
-                'vaulta_token': persisted.get('vaulta_token')
+                'vaulta_token': None
             }
-            
-            # Persist serializable data
             self._persist_session(session_id)
         else:
             logger.info(f"♻️  Reusing existing session: {session_id}")
-            
-            # Update existing session's authentication status
             was_authenticated = self.sessions[session_id].get('authenticated', False)
-            is_authenticated = bool(user_context and user_context.get('phone_number'))
-            
-            # If auth status changed, update context and recreate model with new instruction
+            is_authenticated = bool(user_context and user_context.get('email'))
             if was_authenticated != is_authenticated:
                 logger.info(f"🔄 Auth status changed: {was_authenticated} -> {is_authenticated}")
                 system_instruction = self._build_system_instruction(user_context)
-                
-                # Create new model with updated instruction
                 model = genai.GenerativeModel(
                     model_name=self.model_name,
                     tools=self._get_gemini_tools(),
                     system_instruction=system_instruction
                 )
-                
-                # Update session with new model and context
                 self.sessions[session_id]['model'] = model
                 self.sessions[session_id]['chat'] = model.start_chat(enable_automatic_function_calling=False)
                 self.sessions[session_id]['user_context'] = user_context or {}
                 self.sessions[session_id]['authenticated'] = is_authenticated
-                
-                # Persist updated data
                 self._persist_session(session_id)
-        
         return self.sessions[session_id]
     
     def _build_system_instruction(self, user_context: Dict = None) -> str:
@@ -479,6 +465,9 @@ Just tell me what you'd like to do! 😊"
                     final_response = response.text
                     logger.info(f"✅ Final AI response: {final_response[:100]}...")
                     break
+
+            if final_response is None:
+                final_response = "I'm here and ready to help! 😊"
             
             # Store in history
             session['history'].append({

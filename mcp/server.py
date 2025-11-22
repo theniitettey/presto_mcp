@@ -3,6 +3,7 @@ MCP Server initialization
 Registers all available MCP tool servers
 """
 from mcp.vaulta import vaulta_mcp
+from mcp.status_mcp import status_mcp
 
 
 class MCPServer:
@@ -10,7 +11,8 @@ class MCPServer:
     
     def __init__(self):
         self.servers = {
-            'vaulta': vaulta_mcp
+            'vaulta': vaulta_mcp,
+            'status': status_mcp
         }
         self.tools = self._collect_tools()
     
