@@ -43,7 +43,7 @@ PyJWT==2.10.1
 pyparsing==3.2.5
 python-dotenv==1.2.1
 python-multipart==0.0.20
-pywin32==311
+pywin32==311; platform_system == "Windows"
 referencing==0.37.0
 requests==2.32.5
 rpds-py==0.29.0
