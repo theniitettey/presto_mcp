@@ -65,29 +65,37 @@ def chat():
         else:
             print("⚠️ No token available to set on vaulta_mcp")
         
-        # Get user context from Vaulta if token provided
+        # Get user context - try from storage first, then validate with Vaulta
         user_context = None
         current_token = vaulta_token
         
+        # First, check if we have persisted user context from previous session
+        persisted = ai_service.store.get(session_id)
+        if persisted and persisted.get('user_context', {}).get('email'):
+            user_context = persisted['user_context']
+            print(f"📦 Loaded user context from storage: {user_context.get('email')}")
+        
+        # If we have a token, validate it and refresh user context
         if vaulta_token:
-            print("👤 Fetching user context from Vaulta...")
+            print("👤 Validating token with Vaulta...")
             user_data = vaulta_mcp.client.get_current_user()
             
             if not user_data.get('error'):
                 # Build user context from Vaulta data
-                user_info = user_data.get('user', {})
+                # Note: get_current_user returns user data directly, not nested under 'user'
+                user_info = user_data if user_data.get('email') else user_data.get('user', {})
                 accounts = user_data.get('accounts', [])
                 
                 user_context = {
-                    'email': user_info.get('email'),
-                    'name': f"{user_info.get('first_name', '')} {user_info.get('last_name', '')}".strip(),
-                    'phone': user_info.get('phone'),
+                    'email': user_info.get('email') if isinstance(user_info, dict) else None,
+                    'name': f"{user_info.get('first_name', '')} {user_info.get('last_name', '')}".strip() if isinstance(user_info, dict) else '',
+                    'phone': user_info.get('phone') if isinstance(user_info, dict) else None,
                     'accounts': accounts,
-                    'vaulta_user_id': user_info.get('id')
+                    'vaulta_user_id': user_info.get('id') if isinstance(user_info, dict) else None
                 }
                 current_token = vaulta_token
                 
-                print(f"✅ User context fetched: {user_context.get('email')}")
+                print(f"✅ Token valid! User context refreshed: {user_context.get('email')}")
                 
                 # Store token and user_context in AI session for persistence
                 ai_session = ai_service.sessions.get(session_id)
@@ -101,18 +109,13 @@ def chat():
                 # Token invalid/expired - clear it
                 print(f"❌ Token invalid or expired: {user_data.get('error')}")
                 current_token = None
+                user_context = None  # Clear user context when token is invalid
                 ai_session = ai_service.sessions.get(session_id)
                 if ai_session:
                     ai_session['vaulta_token'] = None
                     ai_session['user_context'] = {}
                     ai_session['authenticated'] = False
                     ai_service._persist_session(session_id)
-        else:
-            # No token - check if we have persisted user context from previous session
-            persisted = ai_service.store.get(session_id)
-            if persisted and persisted.get('user_context', {}).get('email'):
-                user_context = persisted['user_context']
-                print(f"📦 Loaded user context from storage: {user_context.get('email')}")
         
         # Process chat with AI service
         response = ai_service.chat(
@@ -121,14 +124,24 @@ def chat():
             user_context=user_context
         )
         
-        # Check if Vaulta authentication happened - get new token
+        # Check if Vaulta authentication happened - get new token or additional info
         session = ai_service.sessions.get(session_id)
         token_changed = False
+        additional_info = {}  # Store extra response data (e.g., OTP sent message)
         
         if session and session.get('history'):
             last_interaction = session['history'][-1]
             for tool_call in last_interaction.get('tool_calls', []):
-                if tool_call['function'] in ['vaulta_verify_otp']:
+                if tool_call['function'] == 'vaulta_login':
+                    # Extract OTP sent message for better UX
+                    if 'result' in tool_call and isinstance(tool_call['result'], dict):
+                        result = tool_call['result']
+                        otp_message = result.get('message')
+                        if otp_message:
+                            additional_info['otp_info'] = otp_message
+                            print(f"📧 OTP sent info: {otp_message}")
+                
+                elif tool_call['function'] == 'vaulta_verify_otp':
                     if 'result' in tool_call and isinstance(tool_call['result'], dict):
                         result = tool_call['result']
                         # Check for both access_token and jwt_token
@@ -158,6 +171,7 @@ def chat():
                             # Persist everything (token + user_context) to storage
                             ai_service._persist_session(session_id)
                         break
+                
                 elif tool_call['function'] == 'vaulta_logout':
                     # Clear token and de-authenticate session
                     print("🚪 User logged out - clearing token from session")
@@ -174,6 +188,10 @@ def chat():
         # Determine conversation status
         status = determine_status(session, user_context if current_token else None)
         response['status'] = status
+        
+        # Add any additional info (like OTP sent message)
+        if additional_info:
+            response.update(additional_info)
         
         # Always include session_id on first message, token when it changes, and always include status
         if is_first_message:
