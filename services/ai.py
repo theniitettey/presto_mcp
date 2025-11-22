@@ -527,6 +527,18 @@ After completion next generic user request → update_status(VAULTA_ACTIVE).
 
             if final_response is None:
                 final_response = "I'm here and ready to help! 😊"
+
+            # OTP prompt enforcement: if just logged in (vaulta_login called) and awaiting OTP,
+            # prevent the model from hallucinating an OTP code. Replace with standard prompt.
+            if tool_results:
+                called_login = any(t['function'] == 'vaulta_login' for t in tool_results)
+                awaiting_status = any(t['function'] == 'update_status' and (t.get('arguments', {}) or {}).get('status') == 'AWAITING_OTP' for t in tool_results)
+                is_authenticated = bool(user_context and user_context.get('email'))
+                if called_login and awaiting_status and not is_authenticated:
+                    # If AI responded with a naked 6-digit code or lacks OTP guidance, override.
+                    if re.fullmatch(r"\d{6}", final_response.strip()) or ('otp' not in final_response.lower() and 'digit' not in final_response.lower()):
+                        logger.info("🔐 Overriding AI response with standardized OTP prompt to avoid hallucinated code.")
+                        final_response = "I've sent an OTP code to your email. Please enter the 6-digit code to continue."  # Standardized
             
             # Store in history
             session['history'].append({
