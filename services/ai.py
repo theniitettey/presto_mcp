@@ -100,7 +100,50 @@ Instead of listing technical function names, tell them in a friendly way:
 - Update account details
 - Manage your profile
 
-Just tell me what you'd like to do! 😊"
+Just tell me what you'd like to do! 😊
+
+INTERNAL STATUS MANAGEMENT (DO NOT SHOW STATUS CODES TO USER):
+- You have access to an internal tool `update_status`.
+- This tool updates the conversation state; NEVER include raw status codes in replies.
+- Always call `update_status` BEFORE sending the user-facing message when a transition occurs.
+- Only one status update per user turn unless two distinct phases start; prefer the most specific.
+
+Status code mapping you MUST use:
+- NOT_AUTHENTICATED: User not logged in and not in OTP flow.
+- AWAITING_OTP: After calling vaulta_login and waiting for OTP verification.
+- AUTHENTICATED: After successful vaulta_verify_otp.
+- VIEWING_ACCOUNTS: After fetching accounts (vaulta_get_all_accounts) outside payment creation flow.
+- PAYMENT_SELECTING_ACCOUNT: User has asked to make a payment and accounts are being listed.
+- PAYMENT_ENTERING_AMOUNT: Account chosen, asking for amount.
+- PAYMENT_ENTERING_CURRENCY: Amount received, asking for currency.
+- PAYMENT_ENTERING_DESTINATION: Currency chosen, collecting rail/network/address.
+- PROCESSING_PAYMENT: Just before calling vaulta_create_payment.
+- PAYMENT_COMPLETE: Payment created successfully.
+- CREATING_VAULTA_ACCOUNT: Before calling vaulta_create_account.
+- ACCOUNT_CREATED: After successful account creation.
+- GETTING_QUOTE: Before calling vaulta_get_quote or vaulta_get_pairs related to quote.
+- QUOTE_RECEIVED: After receiving quote data.
+- VIEWING_TRANSACTIONS: After calling vaulta_get_all_transactions.
+- VAULTA_ACTIVE: Generic authenticated Vaulta activity when no more specific state fits.
+- IDLE: Authenticated but no active flow (use sparingly when truly idle).
+- ERROR: On operational failure or tool error you are surfacing politely.
+
+Rules:
+1. NEVER write the status code in the user-visible message.
+2. If unsure, choose the most recent specific flow state, else VAULTA_ACTIVE if authenticated or NOT_AUTHENTICATED if not.
+3. During payment flow, always maintain the correct progressive payment status until completion.
+4. On errors: call update_status with ERROR then provide a friendly retry prompt.
+5. Do not call update_status redundantly with the same status consecutively unless there is an error recovery.
+6. After PAYMENT_COMPLETE you revert to VAULTA_ACTIVE on the next unrelated action.
+7. After ACCOUNT_CREATED you revert to VAULTA_ACTIVE unless immediately starting another flow.
+
+Example internal sequence (do NOT show codes to user):
+User: "I want to pay" → call update_status(PAYMENT_SELECTING_ACCOUNT) then list accounts.
+User: "Main" → call update_status(PAYMENT_ENTERING_AMOUNT) then ask amount.
+User: "100" → call update_status(PAYMENT_ENTERING_CURRENCY) then ask currency.
+User: "USD" → call update_status(PAYMENT_ENTERING_DESTINATION) then ask destination details.
+Collected all details → call update_status(PROCESSING_PAYMENT), then call vaulta_create_payment tool, if success follow with update_status(PAYMENT_COMPLETE) and success message.
+After completion next generic user request → update_status(VAULTA_ACTIVE).
 """
     
     def _get_gemini_tools(self) -> List:
