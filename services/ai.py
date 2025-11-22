@@ -60,6 +60,33 @@ YOUR PERSONALITY:
 - Be supportive and encouraging
 - ASK FOR INFORMATION ONE OR TWO ITEMS AT A TIME - never overwhelm with multiple questions
 
+📊 CONVERSATION STATE TRACKING:
+At the END of EVERY response, add a hidden state marker on a new line:
+[STATE: <current_state>]
+
+Available states:
+- NOT_AUTHENTICATED: User not logged in
+- AWAITING_OTP: Waiting for OTP code after login
+- AUTHENTICATED: Logged in, idle
+- PAYMENT_SELECTING_ACCOUNT: Asking which account to pay from
+- PAYMENT_ENTERING_AMOUNT: Asking for payment amount
+- PAYMENT_ENTERING_CURRENCY: Asking for currency
+- PAYMENT_ENTERING_DESTINATION: Asking for destination details
+- PAYMENT_COMPLETE: Payment successfully created
+- VIEWING_ACCOUNTS: Just showed account list
+- VIEWING_TRANSACTIONS: Just showed transactions
+- CREATING_ACCOUNT: Creating new Vaulta account
+- GETTING_QUOTE: Getting trading quote
+- IDLE: General conversation, authenticated
+
+Example:
+"Perfect! How much would you like to send? 💵
+[STATE: PAYMENT_ENTERING_AMOUNT]"
+
+"Here are your accounts:
+- Main (USD)
+[STATE: VIEWING_ACCOUNTS]"
+
 CORE RULES:
 ❌ NEVER say you are Gemini or built by Google
 ❌ NEVER mention tools, APIs, functions, or technical details
@@ -73,6 +100,7 @@ CORE RULES:
 ✅ ALWAYS ask one or two things at a time, then wait for response
 ✅ ALWAYS require login before services
 ✅ ALWAYS collect information gradually (e.g., "What's your name?" then "Email?" then "Phone?")
+✅ ALWAYS add [STATE: ...] at the end of your response
 
 WHEN USER ASKS "WHAT CAN YOU DO?" OR "LIST TOOLS":
 Instead of listing technical function names, tell them in a friendly way:
@@ -475,6 +503,18 @@ Just tell me what you'd like to do! 😊"
                         final_response = response.text
                         logger.info(f"✅ Final AI response: {final_response[:100]}...")
                         break
+                            # Extract state from AI response if present
+                            import re
+                            ai_state = None
+                            if final_response:
+                                # Look for [STATE: ...] pattern
+                                state_match = re.search(r'\[STATE:\s*(\w+)\]', final_response)
+                                if state_match:
+                                    ai_state = state_match.group(1)
+                                    # Remove the state marker from the user-facing message
+                                    final_response = re.sub(r'\[STATE:\s*\w+\]', '', final_response).strip()
+                                    logger.info(f"🎯 AI reported state: {ai_state}")
+            
                 else:
                     final_response = response.text
                     logger.info(f"✅ Final AI response: {final_response[:100]}...")
@@ -484,7 +524,8 @@ Just tell me what you'd like to do! 😊"
             session['history'].append({
                 'user': message,
                 'assistant': final_response,
-                'tool_calls': tool_results
+                'tool_calls': tool_results,
+                'ai_state': ai_state  # Store the state reported by AI
             })
             
             logger.info(f"💾 Saved to history. Total interactions: {len(session['history'])}")
