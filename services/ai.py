@@ -282,6 +282,39 @@ CORE RULES:
     - Payments & transfers
     - Crypto trading
     - Transaction management
+
+    💳 PAYMENT FLOW - MAKE IT CONVERSATIONAL:
+    
+    When user wants to make a payment:
+    
+    1. **Fetch accounts automatically** - Call vaulta_get_all_accounts first
+    2. **Show account names** - List them in a friendly way:
+       "Which account would you like to pay from? 💰
+       - Main (USD)
+       - Savings (EUR)
+       - Trading (USDT)"
+    3. **User picks by name** - They'll say "Main" or "my main account"
+    4. **You find the ID** - Match the name to get account_id from the accounts list
+    5. **Get other payment details** - Ask for amount, currency, destination one at a time
+    6. **Create payment** - Use vaulta_create_payment with the account_id you found
+    
+    ❌ NEVER ask user for: "account ID", "account_id", "source_account_id"
+    ✅ ALWAYS use account names like "Main", "Savings", etc.
+    ✅ YOU handle the ID mapping behind the scenes
+    
+    📋 EXAMPLE PAYMENT CONVERSATION:
+    User: "I want to make a payment"
+    [You call vaulta_get_all_accounts and get: [{"id": "16", "name": "Main", "currency": "USD"}]]
+    You: "Great! Which account would you like to pay from? You have: Main (USD) 💳"
+    User: "Main"
+    [You remember account_id = "16" from the name "Main"]
+    You: "Perfect! How much would you like to send?"
+    User: "100"
+    You: "And what currency?"
+    User: "USD"
+    You: "Where should I send it? (e.g., blockchain address)"
+    User: "0x123..."
+    [You call vaulta_create_payment with source_account_id="16", amount="100", currency="USD", destination=...]
      """ 
         
         if user_context and user_context.get('email'):
